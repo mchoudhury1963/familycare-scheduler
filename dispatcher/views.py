@@ -4,6 +4,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth.decorators import login_required  # <-- Add this line here
 from django.contrib.auth.models import User
 from django.utils import timezone
 from .models import TimeSlot, TeamMember
@@ -145,6 +146,7 @@ def ensure_doctor_slots_exist(target_date, doctor_name):
         TimeSlot.objects.bulk_create(slots_to_create)
 
 
+@login_required(login_url='/')
 def daily_calendar_view(request):
     """
     Multi-doctor, full-day calendar view with 15-minute intervals.
