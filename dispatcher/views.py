@@ -1,13 +1,22 @@
 import datetime
 import urllib.parse
+from django.http import HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.contrib.auth import login, logout, authenticate
-from django.contrib.auth.decorators import login_required  # <-- Add this line here
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.utils import timezone
 from .models import TimeSlot, TeamMember
+
+
+def ping_view(request):
+    """
+    Lightweight keep-alive endpoint for Render free-tier pinger (UptimeRobot / cron-job.org).
+    Returns HTTP 200 OK with plain text response.
+    """
+    return HttpResponse("OK", content_type="text/plain")
 
 
 DEFAULT_ADMIN_MOBILE = "01700000000"
@@ -269,12 +278,14 @@ def daily_calendar_view(request):
     return render(request, 'dispatcher/daily_calendar.html', context)
 
 
+@login_required
 @require_POST
 def book_calendar_slot(request, slot_id=None):
     """
     Handles a POST request to update a specific slot's patient_name, patient_phone,
     booked_by, and receptionist_name and sets is_booked = True,
     then redirects back to the calendar view for that date & doctor.
+    Requires staff or administrator authentication.
     """
     if not slot_id:
         slot_id = request.POST.get('slot_id')
@@ -331,6 +342,7 @@ def book_calendar_slot(request, slot_id=None):
     return redirect(redirect_url)
 
 
+@login_required
 @require_POST
 def cancel_calendar_slot(request, slot_id):
     """
@@ -553,51 +565,95 @@ def add_team_member(request):
 
 
 @require_POST
-def reset_team_member_password(request, member_id):
+def update_team_member_details(request, member_id):
     """
-    Allows clinic administrators to edit / reset the password for a team member.
+    Allows clinic administrators to update name, mobile number (username), and optionally
+    assign a new password for a team member (doctor or receptionist).
+    Preserves all historical patient booking records.
     """
     if not (
             request.user.is_authenticated
             and (request.user.is_staff or request.user.is_superuser)):
         messages.error(
             request,
-            "Access denied. Only clinic administrators can reset staff passwords.")
+            "Access denied. Only clinic administrators can update team member details.")
         return _build_redirect_response(request)
 
     member = get_object_or_404(TeamMember, pk=member_id)
+    if 'name' in request.POST:
+        name = request.POST.get('name', '').strip()
+    else:
+        name = member.name
+
+    if 'phone_number' in request.POST:
+        phone_number = request.POST.get('phone_number', '').strip()
+    else:
+        phone_number = member.phone_number or ""
+
     new_password = request.POST.get('new_password', '').strip()
 
-    if not new_password:
-        messages.error(request, "New password cannot be empty.")
-    elif len(new_password) < 4:
+    if not name:
+        messages.error(request, "Staff member name cannot be empty.")
+    elif not phone_number:
+        messages.error(
+            request, "Telephone / Mobile number (username) is required.")
+    elif TeamMember.objects.filter(phone_number=phone_number).exclude(pk=member.id).exists():
+        messages.error(
+            request, f"A team member with mobile number '{phone_number}' already exists.")
+    elif new_password and len(new_password) < 4:
         messages.error(request, "Password must be at least 4 characters long.")
     else:
+        existing_user_with_phone = User.objects.filter(
+            username=phone_number).first()
+        if existing_user_with_phone and (member.
+                                         user
+                                         is None or existing_user_with_phone.id
+                                         != member.user.id):
+            messages.error(
+                request, f"An account with mobile number '{phone_number}' already exists.")
+            return _build_redirect_response(request)
+
+        member.name = name
+        member.phone_number = phone_number
+
         user = member.user
         if not user:
-            # If no user account was linked yet, create one with their phone_number or name
-            username = member.phone_number or member.name.lower().replace(" ", "")
-            user = User.objects.filter(username=username).first()
-            if not user:
+            if not existing_user_with_phone:
+                initial_pass = new_password if new_password else "StaffPass123!"
                 user = User.objects.create_user(
-                    username=username,
-                    password=new_password,
-                    first_name=member.name
+                    username=phone_number,
+                    password=initial_pass,
+                    first_name=name
                 )
             else:
-                user.set_password(new_password)
+                user = existing_user_with_phone
+                user.first_name = name
+                if new_password:
+                    user.set_password(new_password)
                 user.save()
             member.user = user
-            member.save()
         else:
-            user.set_password(new_password)
+            user.username = phone_number
+            user.first_name = name
+            if new_password:
+                user.set_password(new_password)
             user.save()
 
-        mobile_display = f" (Mobile: {
-            member.phone_number}) "if member.phone_number else ""
-        messages.success(
-            request,
-            f"Password for {member.get_role_display()} '{member.name}'{mobile_display} has been updated successfully."
-        )
+        member.save()
+
+        if new_password:
+            messages.success(
+                request,
+                f"Details and password for {member.get_role_display()} '{member.name}' (Mobile: {member.phone_number}) have been updated successfully."
+            )
+        else:
+            messages.success(
+                request,
+                f"Details for {member.get_role_display()} '{member.name}' (Mobile: {member.phone_number}) have been updated successfully."
+            )
 
     return _build_redirect_response(request)
+
+
+# Backwards compatibility alias
+reset_team_member_password = update_team_member_details

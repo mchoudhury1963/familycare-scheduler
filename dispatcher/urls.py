@@ -17,6 +17,8 @@ urlpatterns = [
         'team/toggle/<int:member_id>/', views.toggle_team_member_status,
         name='toggle_team_member'),
     path('team/add/', views.add_team_member, name='add_team_member'),
+    path('ping/', views.ping_view, name='ping'),
+    path('team/update/<int:member_id>/', views.update_team_member_details, name='update_team_member'),
     path('team/reset-password/<int:member_id>/', views.reset_team_member_password, name='reset_team_member_password'),
     path('team/reset-pw/<int:member_id>/', views.reset_team_member_password, name='reset_password'),
     path('login/', views.login_view, name='login'),

@@ -630,16 +630,26 @@
                                         </button>
                                     {% endif %}
                                 {% else %}
-                                    <button type="button" 
-                                            class="btn btn-success w-100 btn-touch-action shadow-sm"
-                                            data-bs-toggle="modal" 
-                                            data-bs-target="#bookingModal"
-                                            data-slot-id="{{ slot.id }}"
-                                            data-slot-time="{{ slot.start_time|time:'h:i A' }}"
-                                            data-slot-24h="{{ slot.start_time|time:'H:i' }}"
-                                            data-doctor-name="{{ slot.doctor_name }}">
-                                        <i class="bi bi-person-plus-fill me-2"></i>Book Patient
-                                    </button>
+                                    {% if user.is_authenticated %}
+                                        <button type="button" 
+                                                class="btn btn-success w-100 btn-touch-action shadow-sm"
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#bookingModal"
+                                                data-slot-id="{{ slot.id }}"
+                                                data-slot-time="{{ slot.start_time|time:'h:i A' }}"
+                                                data-slot-24h="{{ slot.start_time|time:'H:i' }}"
+                                                data-doctor-name="{{ slot.doctor_name }}">
+                                            <i class="bi bi-person-plus-fill me-2"></i>Book Patient
+                                        </button>
+                                    {% else %}
+                                        <button type="button" 
+                                                class="btn btn-outline-success w-100 btn-touch-action shadow-sm fw-semibold"
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#loginModal"
+                                                title="Sign in as staff or administrator to book this appointment slot">
+                                            <i class="bi bi-box-arrow-in-right me-2"></i>Sign In to Book
+                                        </button>
+                                    {% endif %}
                                 {% endif %}
                             </div>
 
@@ -931,14 +941,14 @@
                                                 </td>
                                                 <td class="text-end">
                                                     <button type="button" 
-                                                            class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1 me-1 reset-pass-btn" 
+                                                            class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1 me-1 edit-details-btn reset-pass-btn" 
                                                             data-bs-toggle="modal" 
-                                                            data-bs-target="#resetPasswordModal"
+                                                            data-bs-target="#updateStaffDetailsModal"
                                                             data-member-id="{{ doc.id }}"
                                                             data-member-name="{{ doc.name }}"
                                                             data-member-phone="{{ doc.phone_number|default:'' }}"
-                                                            title="Reset password for {{ doc.name }}">
-                                                        <i class="bi bi-key me-1"></i>Reset Password
+                                                            title="Edit details or reset password for {{ doc.name }}">
+                                                        <i class="bi bi-pencil-square me-1"></i>Edit Details
                                                     </button>
                                                     <form method="POST" action="{% url 'dispatcher:toggle_team_member' doc.id %}" class="d-inline"
                                                           {% if doc.is_active %}onsubmit="return confirm('Deactivate {{ doc.name }}? They will be removed from active selectors, but all historical booking records are kept intact.');"{% endif %}>
@@ -1016,14 +1026,14 @@
                                                 </td>
                                                 <td class="text-end">
                                                     <button type="button" 
-                                                            class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1 me-1 reset-pass-btn" 
+                                                            class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1 me-1 edit-details-btn reset-pass-btn" 
                                                             data-bs-toggle="modal" 
-                                                            data-bs-target="#resetPasswordModal"
+                                                            data-bs-target="#updateStaffDetailsModal"
                                                             data-member-id="{{ staff.id }}"
                                                             data-member-name="{{ staff.name }}"
                                                             data-member-phone="{{ staff.phone_number|default:'' }}"
-                                                            title="Reset password for {{ staff.name }}">
-                                                        <i class="bi bi-key me-1"></i>Reset Password
+                                                            title="Edit details or reset password for {{ staff.name }}">
+                                                        <i class="bi bi-pencil-square me-1"></i>Edit Details
                                                     </button>
                                                     <form method="POST" action="{% url 'dispatcher:toggle_team_member' staff.id %}" class="d-inline"
                                                           {% if staff.is_active %}onsubmit="return confirm('Deactivate {{ staff.name }}? They will be removed from booking modal selectors, but past booking records remain intact.');"{% endif %}>
@@ -1111,50 +1121,59 @@
         </div>
     </div>
 
-    <!-- Centered Reset Password Modal (Admin Only) -->
-    <div class="modal fade" id="resetPasswordModal" tabindex="-1" aria-labelledby="resetPasswordModalLabel" aria-hidden="true" style="z-index: 1065;">
+    <!-- Centered Update Staff Details Modal (Admin Only) -->
+    <div class="modal fade" id="updateStaffDetailsModal" tabindex="-1" aria-labelledby="updateStaffDetailsModalLabel" aria-hidden="true" style="z-index: 1065;">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content rounded-4 border-0 shadow-lg">
                 <div class="modal-header bg-primary text-white">
                     <div class="d-flex align-items-center gap-2">
                         <div class="p-2 bg-white bg-opacity-25 rounded-3 text-white">
-                            <i class="bi bi-key-fill fs-5"></i>
+                            <i class="bi bi-pencil-square fs-5"></i>
                         </div>
                         <div>
-                            <h5 class="modal-title fw-bold mb-0" id="resetPasswordModalLabel">Reset Staff Password</h5>
-                            <small class="text-white-50">Assign a new password for staff account</small>
+                            <h5 class="modal-title fw-bold mb-0" id="updateStaffDetailsModalLabel">Update Staff Details</h5>
+                            <small class="text-white-50">Edit name, mobile username, or update password</small>
                         </div>
                     </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form id="resetPasswordForm" method="POST" action="">
+                <form id="updateStaffDetailsForm" method="POST" action="">
                     {% csrf_token %}
                     <input type="hidden" name="current_date" value="{{ current_date|date:'Y-m-d' }}">
                     <input type="hidden" name="selected_doctor" value="{{ selected_doctor }}">
                     <input type="hidden" name="period" value="{{ current_period }}">
                     <div class="modal-body p-4">
-                        <div class="alert alert-light border rounded-3 p-3 mb-3">
-                            <div class="d-flex align-items-center justify-content-between mb-1">
-                                <span class="text-muted small">Staff Member:</span>
-                                <strong id="resetTargetName" class="text-dark">-</strong>
+                        <div class="mb-3">
+                            <label for="editStaffNameInput" class="form-label fw-semibold small text-dark">
+                                <i class="bi bi-person-fill text-primary me-1"></i>Staff Name & Title <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control rounded-3" id="editStaffNameInput" name="name" placeholder="Full name & title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editStaffPhoneInput" class="form-label fw-semibold small text-dark">
+                                <i class="bi bi-telephone-fill text-primary me-1"></i>Mobile Number / Username <span class="text-danger">*</span>
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white"><i class="bi bi-phone text-primary"></i></span>
+                                <input type="tel" class="form-control rounded-end-3 font-monospace" id="editStaffPhoneInput" name="phone_number" placeholder="e.g., 017xxxxxxxx" pattern="[0-9+ -]{7,20}" required>
                             </div>
-                            <div class="d-flex align-items-center justify-content-between">
-                                <span class="text-muted small">Mobile Username:</span>
-                                <code id="resetTargetPhone" class="fw-bold text-primary">-</code>
-                            </div>
+                            <div class="form-text small text-muted">Used as login username. Changing this updates their sign-in credential.</div>
                         </div>
                         <div class="mb-3">
                             <label for="newPasswordInput" class="form-label fw-semibold small text-dark">
-                                <i class="bi bi-lock-fill text-primary me-1"></i>New Assigned Password <span class="text-danger">*</span>
+                                <i class="bi bi-shield-lock-fill text-primary me-1"></i>New Password (Optional)
                             </label>
-                            <input type="password" class="form-control rounded-3" id="newPasswordInput" name="new_password" placeholder="Enter new password (min. 4 chars)" minlength="4" required>
-                            <div class="form-text small text-muted">The staff member will use this new password immediately upon next sign-in.</div>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white"><i class="bi bi-key text-primary"></i></span>
+                                <input type="password" class="form-control rounded-end-3" id="newPasswordInput" name="new_password" placeholder="Leave blank to keep existing password" minlength="4">
+                            </div>
+                            <div class="form-text small text-muted">Leave blank to keep existing password. If changing, must be at least 4 characters.</div>
                         </div>
                     </div>
                     <div class="modal-footer bg-light">
                         <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-primary rounded-pill px-4 fw-semibold shadow-sm">
-                            <i class="bi bi-check2-circle me-1"></i> Update Password
+                            <i class="bi bi-check2-circle me-1"></i> Save Changes
                         </button>
                     </div>
                 </form>
@@ -1303,31 +1322,34 @@
                 });
             }
 
-            // Reset Password Modal Setup
-            const resetPasswordModal = document.getElementById('resetPasswordModal');
-            if (resetPasswordModal) {
-                resetPasswordModal.addEventListener('show.bs.modal', function (event) {
+            // Update Staff Details Modal Setup
+            const updateStaffDetailsModal = document.getElementById('updateStaffDetailsModal') || document.getElementById('resetPasswordModal');
+            if (updateStaffDetailsModal) {
+                updateStaffDetailsModal.addEventListener('show.bs.modal', function (event) {
                     const button = event.relatedTarget;
                     if (!button) return;
                     const memberId = button.getAttribute('data-member-id');
                     const memberName = button.getAttribute('data-member-name') || '';
-                    const memberPhone = button.getAttribute('data-member-phone') || 'No mobile assigned';
+                    const memberPhone = button.getAttribute('data-member-phone') || '';
 
-                    const resetForm = document.getElementById('resetPasswordForm');
-                    if (resetForm && memberId) {
-                        resetForm.action = `/team/reset-password/${memberId}/`;
+                    const updateForm = document.getElementById('updateStaffDetailsForm') || document.getElementById('resetPasswordForm');
+                    if (updateForm && memberId) {
+                        updateForm.action = `/team/update/${memberId}/`;
                     }
-                    const nameEl = document.getElementById('resetTargetName');
-                    const phoneEl = document.getElementById('resetTargetPhone');
+                    const nameInput = document.getElementById('editStaffNameInput');
+                    const phoneInput = document.getElementById('editStaffPhoneInput');
                     const newPassInput = document.getElementById('newPasswordInput');
-                    if (nameEl) nameEl.textContent = memberName;
-                    if (phoneEl) phoneEl.textContent = memberPhone;
+                    if (nameInput) nameInput.value = memberName;
+                    if (phoneInput) phoneInput.value = memberPhone;
                     if (newPassInput) newPassInput.value = '';
                 });
 
-                resetPasswordModal.addEventListener('shown.bs.modal', function () {
-                    const newPassInput = document.getElementById('newPasswordInput');
-                    if (newPassInput) newPassInput.focus();
+                updateStaffDetailsModal.addEventListener('shown.bs.modal', function () {
+                    const nameInput = document.getElementById('editStaffNameInput');
+                    if (nameInput) {
+                        nameInput.focus();
+                        nameInput.select();
+                    }
                 });
             }
 

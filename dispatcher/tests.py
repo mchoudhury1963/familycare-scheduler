@@ -126,8 +126,45 @@ class MultiDoctorSchedulerTests(TestCase):
         self.assertTrue(all(s.start_time >= datetime.time(17, 0)
                         for s in evening_slots))
 
+    def test_ping_endpoint_returns_ok(self):
+        """Verify keep-alive ping endpoint returns 200 OK with plain text."""
+        url = reverse('dispatcher:ping')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content.decode('utf-8'), "OK")
+        self.assertEqual(response['Content-Type'], "text/plain")
+
+    def test_unauthenticated_cannot_book_or_cancel_slot(self):
+        """Unauthenticated visitors cannot book or release slots (redirected to LOGIN_URL)."""
+        self.client.logout()
+
+        # Try booking unauthenticated
+        book_url = reverse('dispatcher:book_slot_post')
+        book_res = self.client.post(book_url, {
+            'slot_id': self.open_slot.id,
+            'patient_name': 'Unauthorized Guest',
+            'patient_phone': '01700000000',
+        })
+        self.assertEqual(book_res.status_code, 302)
+        self.assertIn('/?', book_res.url)
+        self.open_slot.refresh_from_db()
+        self.assertFalse(self.open_slot.is_booked)
+
+        # Try cancelling unauthenticated
+        cancel_url = reverse('dispatcher:cancel_slot', kwargs={
+                             'slot_id': self.booked_slot.id})
+        cancel_res = self.client.post(cancel_url)
+        self.assertEqual(cancel_res.status_code, 302)
+        self.assertIn('/?', cancel_res.url)
+        self.booked_slot.refresh_from_db()
+        self.assertTrue(self.booked_slot.is_booked)
+
     def test_book_15min_slot_with_phone_and_redirect(self):
-        """Test booking a 15-minute slot with phone, booked_by, and receptionist_name."""
+        """Test booking a 15-minute slot with phone, booked_by, and receptionist_name as authenticated staff."""
+        self.client.get(reverse('dispatcher:daily_calendar'))
+        self.client.login(username=DEFAULT_ADMIN_MOBILE,
+                          password=DEFAULT_ADMIN_PASS)
+
         url = reverse('dispatcher:book_slot_post')
         post_data = {
             'slot_id': self.open_slot.id,
@@ -153,6 +190,10 @@ class MultiDoctorSchedulerTests(TestCase):
 
     def test_book_slot_missing_required_fields(self):
         """Booking requires both patient name and phone number for call tracking."""
+        self.client.get(reverse('dispatcher:daily_calendar'))
+        self.client.login(username=DEFAULT_ADMIN_MOBILE,
+                          password=DEFAULT_ADMIN_PASS)
+
         url = reverse('dispatcher:book_slot_post')
 
         # Test missing name
@@ -355,9 +396,10 @@ class MultiDoctorSchedulerTests(TestCase):
         # Unauthenticated calendar view
         anon_res = self.client.get(reverse('dispatcher:daily_calendar'))
         self.assertContains(anon_res, "Sign In")
+        self.assertContains(anon_res, "Sign In to Book")
         self.assertNotContains(anon_res, "Admin: Clinic Admin")
         self.assertNotContains(anon_res, 'id="manageTeamModal"')
-        self.assertNotContains(anon_res, 'id="resetPasswordModal"')
+        self.assertNotContains(anon_res, 'id="updateStaffDetailsModal"')
 
     def test_login_invalid_credentials(self):
         """Test sign-in failure with incorrect mobile or password."""
@@ -411,7 +453,7 @@ class MultiDoctorSchedulerTests(TestCase):
         self.assertContains(staff_cal, "Staff: Receptionist Sam")
         self.assertNotContains(staff_cal, "Manage Team")
         self.assertNotContains(staff_cal, 'id="manageTeamModal"')
-        self.assertNotContains(staff_cal, 'id="resetPasswordModal"')
+        self.assertNotContains(staff_cal, 'id="updateStaffDetailsModal"')
 
     def test_admin_reset_staff_password(self):
         """Admin can reset a staff member's password from the roster."""
@@ -446,8 +488,114 @@ class MultiDoctorSchedulerTests(TestCase):
         })
         self.assertEqual(alex_login.status_code, 302)
 
+    def test_admin_update_team_member_details_name_and_phone_only(self):
+        """Admin can update staff name and phone without changing password, preserving historical bookings."""
+        self.client.get(reverse('dispatcher:daily_calendar'))
+        self.client.login(username=DEFAULT_ADMIN_MOBILE,
+                          password=DEFAULT_ADMIN_PASS)
+
+        alex = TeamMember.objects.get(name="Receptionist Alex")
+        old_password = "StaffPass123!"
+
+        # Create a booking previously handled by Alex
+        booking = TimeSlot.objects.create(
+            date=self.today,
+            start_time=datetime.time(10, 0, 0),
+            doctor_name=self.doc1,
+            is_booked=True,
+            patient_name="Historic Patient",
+            patient_phone="01799988877",
+            booked_by="Self",
+            receptionist_name="Receptionist Alex",
+            booked_by_user=alex.user,
+            booked_at=timezone.now()
+        )
+
+        update_url = reverse('dispatcher:update_team_member',
+                             kwargs={'member_id': alex.id})
+        new_name = "Receptionist Alexander"
+        new_phone = "01712999999"
+
+        res = self.client.post(update_url, {
+            'name': new_name,
+            'phone_number': new_phone,
+            'new_password': '',  # Leave blank to keep existing password
+        })
+        self.assertEqual(res.status_code, 302)
+
+        alex.refresh_from_db()
+        self.assertEqual(alex.name, new_name)
+        self.assertEqual(alex.phone_number, new_phone)
+        self.assertEqual(alex.user.first_name, new_name)
+        self.assertEqual(alex.user.username, new_phone)
+        self.assertTrue(alex.user.check_password(old_password))
+
+        # Historic booking remains intact
+        booking.refresh_from_db()
+        self.assertEqual(booking.patient_name, "Historic Patient")
+        self.assertEqual(booking.receptionist_name, "Receptionist Alex")
+        self.assertEqual(booking.booked_by_user_id, alex.user.id)
+
+        # Alex can sign in with new phone username and original password
+        self.client.logout()
+        alex_login = self.client.post(reverse('dispatcher:login'), {
+            'username': new_phone,
+            'password': old_password,
+        })
+        self.assertEqual(alex_login.status_code, 302)
+
+    def test_admin_update_team_member_details_with_password(self):
+        """Admin can update staff name, phone, and assign a new password simultaneously."""
+        self.client.get(reverse('dispatcher:daily_calendar'))
+        self.client.login(username=DEFAULT_ADMIN_MOBILE,
+                          password=DEFAULT_ADMIN_PASS)
+
+        alex = TeamMember.objects.get(name="Receptionist Alex")
+        update_url = reverse('dispatcher:update_team_member',
+                             kwargs={'member_id': alex.id})
+
+        res = self.client.post(update_url, {
+            'name': 'Receptionist Alexander Graham',
+            'phone_number': '01712888888',
+            'new_password': 'NewSuperSecurePass2026!',
+        })
+        self.assertEqual(res.status_code, 302)
+
+        alex.refresh_from_db()
+        self.assertEqual(alex.name, 'Receptionist Alexander Graham')
+        self.assertEqual(alex.phone_number, '01712888888')
+        self.assertTrue(alex.user.check_password('NewSuperSecurePass2026!'))
+
+        # Login with new credentials
+        self.client.logout()
+        alex_login = self.client.post(reverse('dispatcher:login'), {
+            'username': '01712888888',
+            'password': 'NewSuperSecurePass2026!',
+        })
+        self.assertEqual(alex_login.status_code, 302)
+
+    def test_update_team_member_duplicate_phone_validation(self):
+        """Updating to a phone number already used by another member is prevented."""
+        self.client.get(reverse('dispatcher:daily_calendar'))
+        self.client.login(username=DEFAULT_ADMIN_MOBILE,
+                          password=DEFAULT_ADMIN_PASS)
+
+        emily = TeamMember.objects.get(
+            name="Receptionist Emily")  # phone 01712000001
+        alex = TeamMember.objects.get(name="Receptionist Alex")
+
+        update_url = reverse('dispatcher:update_team_member',
+                             kwargs={'member_id': alex.id})
+        res = self.client.post(update_url, {
+            'name': 'Receptionist Alex',
+            'phone_number': emily.phone_number,
+        })
+        self.assertEqual(res.status_code, 302)
+        alex.refresh_from_db()
+        self.assertNotEqual(alex.phone_number, emily.phone_number)
+
     def test_access_control_manage_team_forbidden_for_staff_and_guests(self):
-        """Guests and regular staff cannot access add_team_member, reset_password, or toggle_member."""
+        """Guests and regular staff cannot access add_team_member, reset_password, update_team_member, or toggle_member."""
         self.client.get(reverse('dispatcher:daily_calendar'))
         target_member = TeamMember.objects.get(name=self.doc2)
 
@@ -456,6 +604,9 @@ class MultiDoctorSchedulerTests(TestCase):
             kwargs={'member_id': target_member.id})
         reset_url = reverse(
             'dispatcher:reset_team_member_password',
+            kwargs={'member_id': target_member.id})
+        update_url = reverse(
+            'dispatcher:update_team_member',
             kwargs={'member_id': target_member.id})
         add_url = reverse('dispatcher:add_team_member')
 
@@ -472,6 +623,12 @@ class MultiDoctorSchedulerTests(TestCase):
         target_member.refresh_from_db()
         self.assertFalse(target_member.user.check_password(
             'HackedPassword123!'))  # Unchanged!
+
+        r2b = self.client.post(
+            update_url, {'name': 'Hacked Name', 'phone_number': '01799990000'})
+        self.assertEqual(r2b.status_code, 302)
+        target_member.refresh_from_db()
+        self.assertNotEqual(target_member.name, 'Hacked Name')
 
         r3 = self.client.post(
             add_url,
@@ -494,6 +651,13 @@ class MultiDoctorSchedulerTests(TestCase):
         target_member.refresh_from_db()
         self.assertFalse(target_member.user.check_password(
             'HackedPassword123!'))
+
+        r5b = self.client.post(
+            update_url,
+            {'name': 'Staff Modified Doc', 'phone_number': '01799990000'})
+        self.assertEqual(r5b.status_code, 302)
+        target_member.refresh_from_db()
+        self.assertNotEqual(target_member.name, 'Staff Modified Doc')
 
         r6 = self.client.post(
             add_url,
