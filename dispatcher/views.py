@@ -146,7 +146,6 @@ def ensure_doctor_slots_exist(target_date, doctor_name):
         TimeSlot.objects.bulk_create(slots_to_create)
 
 
-@login_required(login_url='/')
 def daily_calendar_view(request):
     """
     Multi-doctor, full-day calendar view with 15-minute intervals.
