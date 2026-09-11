@@ -71,17 +71,27 @@ class MultiDoctorSchedulerTests(TestCase):
             date=self.today, doctor_name=self.doc1)
         self.assertEqual(doc1_slots.count(), 64)
 
-        # Check HTML contains 15 mins indicators, doctor name, and staff info
+        # Check HTML contains 15 mins indicators, doctor name
         self.assertContains(response, "15 mins")
         self.assertContains(response, self.doc1)
         self.assertContains(response, "slot-card-available")
         self.assertContains(response, "slot-card-booked")
-        self.assertContains(response, "Existing Patient")
-        self.assertContains(response, "(555) 123-4567")
-        self.assertContains(response, "Receptionist Mary")
-        self.assertContains(response, "Handled by:")
-        self.assertContains(response, "Receptionist Emily")
+        self.assertContains(response, "Slot Booked")
+        self.assertNotContains(response, "Existing Patient")
+        self.assertNotContains(response, "(555) 123-4567")
+        self.assertNotContains(response, "Handled by:")
         self.assertIn('staff_list', response.context)
+
+        # Authenticated staff sees full confidential patient details
+        self.client.login(username=DEFAULT_ADMIN_MOBILE,
+                          password=DEFAULT_ADMIN_PASS)
+        auth_response = self.client.get(url, {'doctor': self.doc1})
+        self.assertContains(auth_response, "Existing Patient")
+        self.assertContains(auth_response, "(555) 123-4567")
+        self.assertContains(auth_response, "Receptionist Mary")
+        self.assertContains(auth_response, "Handled by:")
+        self.assertContains(auth_response, "Receptionist Emily")
+        self.client.logout()
 
     def test_multi_doctor_schedule_isolation(self):
         """Verify switching doctor displays that doctor's distinct schedule."""
@@ -282,13 +292,16 @@ class MultiDoctorSchedulerTests(TestCase):
         response = self.client.get(reverse('dispatcher:daily_calendar'))
         self.assertNotIn(self.doc1, response.context['active_doctors'])
 
-        # Directly visit deactivated doctor's schedule for auditing
+        # Directly visit deactivated doctor's schedule for auditing (authenticated staff/admin)
+        self.client.login(username=DEFAULT_ADMIN_MOBILE,
+                          password=DEFAULT_ADMIN_PASS)
         audit_response = self.client.get(
             reverse('dispatcher:daily_calendar'),
             {'doctor': self.doc1})
         self.assertFalse(audit_response.context['is_current_doctor_active'])
         self.assertContains(audit_response, "Historical Schedule & Audit Mode")
         self.assertContains(audit_response, "Existing Patient")
+        self.client.logout()
 
         # Confirm booking still exists intact in the database
         self.booked_slot.refresh_from_db()
@@ -699,11 +712,21 @@ class MultiDoctorSchedulerTests(TestCase):
         self.booked_slot.booked_at = created_dt
         self.booked_slot.save()
 
+        # Anonymous guest does not see confidential creation timestamp
+        anon_res = self.client.get(
+            reverse('dispatcher:daily_calendar'),
+            {'doctor': self.doc1})
+        self.assertEqual(anon_res.status_code, 200)
+        self.assertNotContains(anon_res, "Booked: 09/07/2026, 09:30 AM")
+
+        # Authenticated staff sees the exact creation timestamp
+        self.client.login(username="01712000001", password="StaffPass123!")
         res = self.client.get(
             reverse('dispatcher:daily_calendar'),
             {'doctor': self.doc1})
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, "Booked: 09/07/2026, 09:30 AM")
+        self.client.logout()
 
     def test_release_slot_permission_allowed_for_creator(self):
         """Staff member who created the booking can view and click Release Slot."""
@@ -798,6 +821,11 @@ class MultiDoctorSchedulerTests(TestCase):
             {'doctor': self.doc1})
         self.assertContains(guest_view, "Slot Locked")
         self.assertNotContains(guest_view, "Release Slot")
+        self.assertNotContains(guest_view, "Existing Patient")
+        self.assertNotContains(guest_view, "(555) 123-4567")
+        self.assertNotContains(guest_view, "Receptionist Mary")
+        self.assertNotContains(guest_view, "Handled by:")
+        self.assertContains(guest_view, "Slot Booked")
 
         guest_post = self.client.post(cancel_url)
         self.assertEqual(guest_post.status_code, 302)
@@ -839,3 +867,27 @@ class MultiDoctorSchedulerTests(TestCase):
         self.assertContains(admin_cal, 'id="receptionistSelect"')
         self.assertContains(
             admin_cal, "Administrator mode: Select any receptionist")
+
+    def test_confidentiality_patient_details_hidden_from_public_visitors(self):
+        """Public visitors cannot see patient names, phone numbers, or staff intake on booked cards."""
+        self.client.logout()
+        url = reverse('dispatcher:daily_calendar')
+        response = self.client.get(url, {'doctor': self.doc1})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Slot Booked")
+        self.assertContains(response, "Unavailable")
+        self.assertNotContains(response, "Existing Patient")
+        self.assertNotContains(response, "(555) 123-4567")
+        self.assertNotContains(response, "Receptionist Mary")
+        self.assertNotContains(response, "Handled by:")
+
+        # Log in as receptionist to verify authorized visibility
+        self.client.login(username="01712000001", password="StaffPass123!")
+        auth_res = self.client.get(url, {'doctor': self.doc1})
+        self.assertContains(auth_res, "Existing Patient")
+        self.assertContains(auth_res, "(555) 123-4567")
+        self.assertContains(auth_res, "Receptionist Mary")
+        self.assertContains(auth_res, "Handled by:")
+        self.assertContains(auth_res, "Receptionist Emily")
+        self.client.logout()

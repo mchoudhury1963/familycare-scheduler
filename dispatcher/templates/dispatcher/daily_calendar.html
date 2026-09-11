@@ -521,7 +521,7 @@
                                     <div class="time-display lh-1 mb-1">
                                         {{ slot.start_time|time:"h:i A" }}
                                     </div>
-                                    {% if slot.is_booked %}
+                                    {% if slot.is_booked and user.is_authenticated %}
                                         <div class="d-flex align-items-center gap-1" style="font-size: 0.72rem; font-weight: 600; color: #92400e;" title="Exact database creation timestamp for advance booking tracking">
                                             <i class="bi bi-clock-history" style="color: #b45309;"></i>
                                             <span>Booked: {% if slot.booked_at %}{{ slot.booked_at|date:"m/d/Y, h:i A" }}{% else %}{{ slot.date|date:"m/d/Y" }}, {{ slot.start_time|time:"h:i A" }}{% endif %}</span>
@@ -552,54 +552,63 @@
                             <!-- Card Middle: Patient Info, Phone, and Booked By -->
                             <div class="my-auto py-1">
                                 {% if slot.is_booked %}
-                                    <!-- Patient Name -->
-                                    <div class="patient-info-card mb-2 py-1 px-2">
-                                        <small class="text-uppercase fw-bold d-block" style="font-size: 0.62rem; letter-spacing: 0.5px; color: #92400e;">
-                                            <i class="bi bi-person-fill me-1" style="color: #d97706;"></i> Patient Name
-                                        </small>
-                                        <div class="fw-bold text-dark text-truncate d-block fs-6 lh-sm" title="{{ slot.patient_name }}">
-                                            {{ slot.patient_name }}
-                                        </div>
-                                    </div>
-
-                                    <!-- Phone Number & Call Action -->
-                                    <div class="patient-info-card mb-2 py-1 px-2">
-                                        <small class="text-uppercase fw-bold d-block" style="font-size: 0.62rem; letter-spacing: 0.5px; color: #92400e;">
-                                            <i class="bi bi-telephone-fill me-1" style="color: #d97706;"></i> Phone (Tracking)
-                                        </small>
-                                        {% if slot.patient_phone %}
-                                            <div class="d-flex align-items-center justify-content-between gap-1">
-                                                <a href="tel:{{ slot.patient_phone }}" class="fw-semibold text-dark text-truncate small lh-sm text-decoration-none" title="Call {{ slot.patient_phone }} on mobile dialer">
-                                                    {{ slot.patient_phone }}
-                                                </a>
-                                                <a href="tel:{{ slot.patient_phone }}" class="btn btn-sm btn-outline-success py-0 px-2 rounded-pill fw-semibold" style="font-size: 0.72rem; white-space: nowrap;" title="Call Patient">
-                                                    📞 Call
-                                                </a>
+                                    {% if user.is_authenticated %}
+                                        <!-- Patient Name -->
+                                        <div class="patient-info-card mb-2 py-1 px-2">
+                                            <small class="text-uppercase fw-bold d-block" style="font-size: 0.62rem; letter-spacing: 0.5px; color: #92400e;">
+                                                <i class="bi bi-person-fill me-1" style="color: #d97706;"></i> Patient Name
+                                            </small>
+                                            <div class="fw-bold text-dark text-truncate d-block fs-6 lh-sm" title="{{ slot.patient_name }}">
+                                                {{ slot.patient_name }}
                                             </div>
-                                        {% else %}
-                                            <span class="text-muted small fst-italic" style="font-size: 0.75rem;">No phone recorded</span>
-                                        {% endif %}
-                                    </div>
-
-                                    <!-- Booked By / Caller -->
-                                    <div class="patient-info-card mb-2 py-1 px-2" style="background-color: #fcfbf7; border-color: #f1ebd8;">
-                                        <small class="text-uppercase text-secondary fw-bold d-block" style="font-size: 0.60rem; letter-spacing: 0.5px;">
-                                            <i class="bi bi-headset text-secondary me-1"></i> Booked By / Caller
-                                        </small>
-                                        <div class="fw-semibold text-secondary text-truncate small lh-sm" title="{{ slot.booked_by|default:slot.patient_name }}">
-                                            {{ slot.booked_by|default:slot.patient_name }}
                                         </div>
-                                    </div>
 
-                                    <!-- Staff / Receptionist -->
-                                    <div class="patient-info-card py-1 px-2" style="background-color: #fffbeb; border-color: #fde68a;">
-                                        <small class="text-uppercase fw-bold d-block" style="font-size: 0.60rem; letter-spacing: 0.5px; color: #92400e;">
-                                            <i class="bi bi-person-badge-fill me-1" style="color: #d97706;"></i> Staff Intake
-                                        </small>
-                                        <div class="fw-semibold text-dark text-truncate small lh-sm" title="Handled by: {{ slot.receptionist_name|default:'Front Desk' }}">
-                                            <span class="text-muted">Handled by:</span> <strong style="color: #78350f;">{{ slot.receptionist_name|default:"Front Desk" }}</strong>
+                                        <!-- Phone Number & Call Action -->
+                                        <div class="patient-info-card mb-2 py-1 px-2">
+                                            <small class="text-uppercase fw-bold d-block" style="font-size: 0.62rem; letter-spacing: 0.5px; color: #92400e;">
+                                                <i class="bi bi-telephone-fill me-1" style="color: #d97706;"></i> Phone (Tracking)
+                                            </small>
+                                            {% if slot.patient_phone %}
+                                                <div class="d-flex align-items-center justify-content-between gap-1">
+                                                    <a href="tel:{{ slot.patient_phone }}" class="fw-semibold text-dark text-truncate small lh-sm text-decoration-none" title="Call {{ slot.patient_phone }} on mobile dialer">
+                                                        {{ slot.patient_phone }}
+                                                    </a>
+                                                    <a href="tel:{{ slot.patient_phone }}" class="btn btn-sm btn-outline-success py-0 px-2 rounded-pill fw-semibold" style="font-size: 0.72rem; white-space: nowrap;" title="Call Patient">
+                                                        📞 Call
+                                                    </a>
+                                                </div>
+                                            {% else %}
+                                                <span class="text-muted small fst-italic" style="font-size: 0.75rem;">No phone recorded</span>
+                                            {% endif %}
                                         </div>
-                                    </div>
+
+                                        <!-- Booked By / Caller -->
+                                        <div class="patient-info-card mb-2 py-1 px-2" style="background-color: #fcfbf7; border-color: #f1ebd8;">
+                                            <small class="text-uppercase text-secondary fw-bold d-block" style="font-size: 0.60rem; letter-spacing: 0.5px;">
+                                                <i class="bi bi-headset text-secondary me-1"></i> Booked By / Caller
+                                            </small>
+                                            <div class="fw-semibold text-secondary text-truncate small lh-sm" title="{{ slot.booked_by|default:slot.patient_name }}">
+                                                {{ slot.booked_by|default:slot.patient_name }}
+                                            </div>
+                                        </div>
+
+                                        <!-- Staff / Receptionist -->
+                                        <div class="patient-info-card py-1 px-2" style="background-color: #fffbeb; border-color: #fde68a;">
+                                            <small class="text-uppercase fw-bold d-block" style="font-size: 0.60rem; letter-spacing: 0.5px; color: #92400e;">
+                                                <i class="bi bi-person-badge-fill me-1" style="color: #d97706;"></i> Staff Intake
+                                            </small>
+                                            <div class="fw-semibold text-dark text-truncate small lh-sm" title="Handled by: {{ slot.receptionist_name|default:'Front Desk' }}">
+                                                <span class="text-muted">Handled by:</span> <strong style="color: #78350f;">{{ slot.receptionist_name|default:"Front Desk" }}</strong>
+                                            </div>
+                                        </div>
+                                    {% else %}
+                                        <!-- Public Visitor View: Slot Reserved / Unavailable (Confidential) -->
+                                        <div class="py-4 text-center text-muted small">
+                                            <i class="bi bi-calendar-check-fill text-warning-emphasis fs-1 d-block mb-1 opacity-75"></i>
+                                            <span class="text-warning-emphasis fw-bold fs-6 d-block">Slot Booked</span>
+                                            <small class="text-muted" style="font-size: 0.72rem;">Unavailable &bull; Reserved Appointment</small>
+                                        </div>
+                                    {% endif %}
                                 {% else %}
                                     <div class="py-4 text-center text-muted small">
                                         <i class="bi bi-shield-plus text-success fs-1 d-block mb-1 opacity-75"></i>
